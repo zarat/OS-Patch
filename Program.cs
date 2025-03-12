@@ -40,12 +40,10 @@ class Program
 
         if (Environment.Is64BitOperatingSystem)
         {
-            Console.WriteLine("[info] Das Betriebssystem ist 64-Bit (x64).");
             arch = "x64";
         }
         else
         {
-            Console.WriteLine("[info] Das Betriebssystem ist 32-Bit (x86).");
             arch = "x86";
         }
 
@@ -62,33 +60,50 @@ class Program
         bool update = false;
         if (args.Count() > 0) { update = true; }
 
+        // Installierte 32 bit programme
+        //PSExecute("Get-ItemProperty HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | select DisplayName,DisplayVersion,UninstallString | convertto-csv -NoTypeInformation");
+        // installierte 64 bit programme
+        //PSExecute("Get-ItemProperty HKLM:\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\* | select DisplayName,DisplayVersion,UninstallString | convertto-csv -NoTypeInformation");
+
         Console.WriteLine($"[info] Suche nach auf dem System installierten Software-Paketen...");
-        var installedPackages = GetInstalledPackages();
+        var installedPackages = GetInstalledPackages();      
         if (installedPackages.Count == 0)
         {
             Console.WriteLine("[info] Keine installierten Pakete gefunden.");
             return;
         }
-        Console.WriteLine($"[info] {installedPackages.Count} installierte Software-Pakete gefunden");
+        //Console.WriteLine($"[info] {installedPackages.Count} installierte Software-Pakete gefunden");
+        
+        List<Package> managedPackages = new List<Package>();
+        List<Package> unmanagedPackages = new List<Package>();
+        
         if (installedPackages.Count() > 0)
         {
-            Console.WriteLine("");
+            //Console.WriteLine("");
             foreach (Package p in installedPackages)
             {
                 var repoPkg = repoPackages.FirstOrDefault(r => r.Name.Equals(p.Name, StringComparison.OrdinalIgnoreCase));
+                //var repoPkg = repoPackages.FirstOrDefault(r => r.Id.Equals(p.Id, StringComparison.OrdinalIgnoreCase));
                 if (repoPkg != null) 
                 {
-                    Console.WriteLine(" +++ " + p.Name + " - " + p.Version);
+                    //Console.WriteLine(" +++ " + p.Name + " - " + p.Version);
+                    managedPackages.Add(p);
                 } 
                 else
                 {
-                    Console.WriteLine(" --- " + p.Name + " - " + p.Version);
+                    //Console.WriteLine(" --- " + p.Name + " - " + p.Version);
+                    unmanagedPackages.Add(p);
                 }
             }
-            Console.WriteLine("");
+            //Console.WriteLine("");
         }
 
-        Console.WriteLine("[info] Vergleiche installierte und verfügbare Versionen...");
+        Console.WriteLine($"[info] {managedPackages.Count()} verwaltete und {unmanagedPackages.Count()} nicht-verwaltete installierte Software-Pakete gefunden\n");
+        foreach(Package p in managedPackages) { Console.WriteLine("\t+++ " + p.Name + " - " + p.Version); }
+        foreach (Package p in unmanagedPackages) { Console.WriteLine("\t--- " + p.Name + " - " + p.Version); }
+        Console.WriteLine("");
+
+        Console.WriteLine("[info] Vergleiche installierte und verfügbare Versionen...\n");
         List<string> uptodateprograms = new List<string>();
         bool updatesAvailable = false;
         foreach (var installed in installedPackages)
@@ -99,7 +114,7 @@ class Program
                 var latestRepoVersion = repoPkg.AvailableVersions.OrderByDescending(v => new Version(v)).FirstOrDefault();
                 if (latestRepoVersion != null && IsNewerVersion(latestRepoVersion, installed.Version))
                 {
-                    Console.Write($"\nUpdate verfügbar: {installed.Name} ");
+                    Console.Write($"{installed.Name} ");
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.Write($"{installed.Version} ");
                     Console.ResetColor();
@@ -123,7 +138,7 @@ class Program
                     List<(string Architecture, string InstallerUrl)> installerData = ExtractInstallerData(yamlContent);
                     foreach (var data in installerData)
                     {
-                        Console.WriteLine($" * {data.Architecture}: {data.InstallerUrl}");
+                        Console.WriteLine($"\t{data.Architecture}: {data.InstallerUrl}");
                         if(data.Architecture == arch)
                         {
                             //await InstallPackageAsync(data.InstallerUrl);
@@ -140,6 +155,7 @@ class Program
                 }
             }
         }
+        Console.WriteLine("");
 
         if (uptodateprograms.Count() > 0)
         {
@@ -186,7 +202,7 @@ class Program
     public static void CheckOS()
     {
         var os = Environment.OSVersion;
-        Console.WriteLine("[info] Prüfe Betriebssystem...");
+        Console.WriteLine("[info] Prüfe Betriebssystem...\n");
         Console.WriteLine("\tPlatform: {0:G}", os.Platform);
         Console.WriteLine("\tVersion String: {0}", os.VersionString);
         Console.WriteLine("\tVersion Information:");
@@ -211,7 +227,7 @@ class Program
     {
         try
         {
-            Console.WriteLine("[info] Prüfe Lizenzstatus...");
+            Console.WriteLine("[info] Prüfe Lizenzstatus...\n");
             // WMI-Abfrage zur Win32_OperatingSystem-Klasse
             ManagementObjectSearcher searcher = new ManagementObjectSearcher("SELECT * FROM SoftwareLicensingProduct WHERE PartialProductKey IS NOT NULL");
 
@@ -241,6 +257,7 @@ _____  |  | __ _____             ___________ _/  |_  ____ |  |__   ___________
  / __ \|    <|  Y Y  \  /_____/  |  |_> > __ \|  | \  \___|   Y  \  ___/|  | \/
 (____  /__|_ \__|_|  /           |   __(____  /__|  \___  >___|  /\___  >__|   
      \/     \/     \/            |__|       \/          \/     \/     \/       ");
+        Console.WriteLine("");
     }
 
     // Download and install update package
@@ -302,6 +319,42 @@ _____  |  | __ _____             ___________ _/  |_  ____ |  |__   ___________
         }
     }
 
+    static void PSExecute(String command)
+    {
+        try
+        {
+
+            string arguments = " -NoProfile -ExecutionPolicy Bypass -Command \"" + command + "\"";
+
+            var processStartInfo = new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = command,
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = new Process { StartInfo = processStartInfo };
+            process.Start();
+
+            var packageList = new List<Package>();
+            bool firstLine = true;
+
+            while (!process.StandardOutput.EndOfStream)
+            {
+                string line = process.StandardOutput.ReadLine()?.Trim();
+                Console.WriteLine(line);
+            }
+
+            process.WaitForExit();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Fehler beim Abruf: {ex.Message}");
+        }
+    }
+
     static List<Package> GetInstalledPackages()
     {
 
@@ -323,18 +376,22 @@ _____  |  | __ _____             ___________ _/  |_  ____ |  |__   ___________
         }
         */
 
+        //type = "server";
             try
             {
 
                 string arguments = String.Empty;
                 if (type == "server")
                 {
-                    arguments = "-NoProfile -ExecutionPolicy Bypass -Command \"Get-WMIObject -Class Win32_Product | Where-Object { -not ($_.Vendor -match 'Microsoft') } | Select-Object Name,Version | ConvertTo-Csv -NoTypeInformation\"";
+                    // WMI kennt keine source
+                    // Name,Version,Fake(Source=akm)
+                    arguments = "-NoProfile -ExecutionPolicy Bypass -Command \"Get-WMIObject -Class Win32_Product | Where-Object { -not ($_.Vendor -match 'Microsoft') } | Select-Object Name,Id,Version,@{ Name = 'Source'; Expression = { 'wmi-has-none' } } | ConvertTo-Csv -NoTypeInformation\"";
                     Console.WriteLine($"[info] Wähle WMI für \"{type}\"");
                 }
                 else
                 {
-                    arguments = "-NoProfile -ExecutionPolicy Bypass -Command \"Get-WingetPackage | where-object { $_.Source -eq 'winget' } | select Name,InstalledVersion | ConvertTo-Csv -NoTypeInformation\"";
+                    // Name,Version,Source
+                    arguments = "-NoProfile -ExecutionPolicy Bypass -Command \"Get-WingetPackage | Where-Object { -not ($_.Name -match 'Microsoft') }| select-object Name,Id,InstalledVersion,Source | ConvertTo-Csv -NoTypeInformation\"";
                     Console.WriteLine($"[info] Wähle package manager für \"{type}\"");
                 }
 
@@ -361,6 +418,7 @@ _____  |  | __ _____             ___________ _/  |_  ____ |  |__   ___________
                         firstLine = false; // Erste Zeile (CSV-Header) ignorieren
                         continue;
                     }
+                    Console.WriteLine("[debug] Read line..");
 
                     var parts = line.Split(',');
                     if (parts.Length >= 2)
@@ -368,7 +426,9 @@ _____  |  | __ _____             ___________ _/  |_  ____ |  |__   ___________
                         packageList.Add(new Package
                         {
                             Name = parts[0].Trim('"'),
-                            Version = parts[1].Trim('"')
+                            Id = parts[1].Trim('"'),
+                            Version = parts[2].Trim('"'),
+                            Source = parts[3].Trim('"') == "" ? "no-source": parts[3].Trim('"')
                         });
                     }
                 }
@@ -515,6 +575,7 @@ _____  |  | __ _____             ___________ _/  |_  ____ |  |__   ___________
         public string Name { get; set; }
         public string Version { get; set; }
         public string Id { get; set; }
+        public string Source { get; set; }
         public List<string> AvailableVersions { get; set; }  // Array von Versionen
     }
 
